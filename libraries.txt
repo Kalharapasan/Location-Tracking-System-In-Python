@@ -1,0 +1,14 @@
+pip install phonenumbers geopy folium
+
+pip install --upgrade pip setuptools wheel
+pip install --upgrade numpy pandas folium geopy phonenumbers
+
+pip install phonenumbers geopy
+
+# Upgrade pip and setuptools
+python -m pip install --upgrade pip setuptools wheel
+
+# Install required libraries
+pip install phonenumbers geopy
+
+pip install phonenumbers geopy
