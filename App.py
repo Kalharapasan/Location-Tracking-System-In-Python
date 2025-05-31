@@ -1,153 +1,103 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 import phonenumbers
-from phonenumbers import geocoder
+from phonenumbers import geocoder, carrier
 from geopy.geocoders import Nominatim
 import webbrowser
-import os
 
 class PhoneLocationTracker:
     def __init__(self, master):
         self.master = master
-        master.title("Phone Location Tracker")
+        master.title("📍 Phone Location Tracker")
         master.geometry("600x700")
-        master.configure(bg='#f0f0f0')
+        master.configure(bg='white')
 
-        # Style
         self.style = ttk.Style()
-        self.style.configure('TLabel', background='#f0f0f0', font=('Arial', 12))
-        self.style.configure('TButton', font=('Arial', 12))
+        self.style.configure('TLabel', background='white', font=('Segoe UI', 12))
+        self.style.configure('TButton', font=('Segoe UI', 12), padding=6)
 
-        # Create UI Components
         self.create_widgets()
 
     def create_widgets(self):
-        # Country Code Dropdown
-        ttk.Label(self.master, text="Select Country Code:", style='TLabel').pack(pady=(20, 5))
-        
-        # Country codes list with Sri Lanka added
+        ttk.Label(self.master, text="📱 Phone Location Tracker", font=("Segoe UI", 18, 'bold')).pack(pady=(20, 10))
+
+        # Country code selection
+        ttk.Label(self.master, text="Select Country Code:").pack(pady=(10, 5))
         country_codes = [
-            "+1 (USA)", "+44 (UK)", "+91 (India)", "+86 (China)", 
-            "+81 (Japan)", "+49 (Germany)", "+7 (Russia)", "+61 (Australia)",
-            "+94 (Sri Lanka)"
+            "+1 (USA)", "+44 (UK)", "+91 (India)", "+94 (Sri Lanka)", "+81 (Japan)",
+            "+61 (Australia)", "+86 (China)", "+49 (Germany)", "+7 (Russia)"
         ]
         self.country_code = tk.StringVar(value=country_codes[0])
-        country_dropdown = ttk.Combobox(
-            self.master, 
-            textvariable=self.country_code, 
-            values=country_codes, 
-            width=30
-        )
+        country_dropdown = ttk.Combobox(self.master, textvariable=self.country_code, values=country_codes, width=30)
         country_dropdown.pack(pady=5)
 
-        # Phone Number Entry with placeholder and validation
-        ttk.Label(self.master, text="Enter Phone Number:", style='TLabel').pack(pady=(10, 5))
+        # Phone number entry
+        ttk.Label(self.master, text="Enter Phone Number:").pack(pady=(10, 5))
         self.phone_entry = ttk.Entry(self.master, width=40)
-        self.phone_entry.insert(0, "Valid formats: 701234567, 711234567, 721234567, 751234567, 771234567, 781234567")
-        self.phone_entry.bind('<FocusIn>', self.clear_placeholder)
-        self.phone_entry.bind('<FocusOut>', self.restore_placeholder)
         self.phone_entry.pack(pady=5)
 
         # Track Button
-        track_button = ttk.Button(
-            self.master, 
-            text="Track Location", 
-            command=self.track_location,
-            style='TButton'
-        )
-        track_button.pack(pady=20)
+        track_btn = ttk.Button(self.master, text="🔍 Track Location", command=self.track_location)
+        track_btn.pack(pady=20)
 
-        # Result Display Area
-        self.result_frame = tk.Frame(self.master, bg='#f0f0f0')
-        self.result_frame.pack(pady=10, expand=True, fill='both')
+        # Results frame
+        self.result_frame = tk.Frame(self.master, bg='white')
+        self.result_frame.pack(pady=10)
 
-        # Location Details Labels
-        self.location_label = ttk.Label(
-            self.result_frame, 
-            text="Location Details:", 
-            style='TLabel'
-        )
-        self.location_label.pack(pady=(10, 5))
+        self.result_labels = {}
 
-        self.details_label = ttk.Label(
-            self.result_frame, 
-            text="", 
-            style='TLabel', 
-            wraplength=500
-        )
-        self.details_label.pack(pady=5)
+        fields = ['location', 'region', 'network', 'latitude', 'longitude']
+        icons = {
+            'location': '🔑', 'region': '🌍', 'network': '🔧',
+            'latitude': '🧽', 'longitude': '🧽'
+        }
 
-    def clear_placeholder(self, event):
-        """Clear placeholder text when entry is focused"""
-        if self.phone_entry.get() == "Valid formats: 701234567, 711234567, 721234567, 751234567, 771234567, 781234567":
-            self.phone_entry.delete(0, tk.END)
-            self.phone_entry.config(foreground='black')
+        for field in fields:
+            label = ttk.Label(self.result_frame, text="", font=('Segoe UI', 11))
+            label.pack(pady=2)
+            self.result_labels[field] = label
 
-    def restore_placeholder(self, event):
-        """Restore placeholder if no text is entered"""
-        if not self.phone_entry.get():
-            self.phone_entry.insert(0, "Valid formats: 701234567, 711234567, 721234567, 751234567, 771234567, 781234567")
-            self.phone_entry.config(foreground='gray')
+        self.map_button = None
 
     def validate_sri_lankan_number(self, number):
-        """
-        Validate Sri Lankan mobile number formats
-        Accepted formats: 
-        - 701234567, 711234567, 721234567, 751234567, 771234567, 781234567 (without leading zero)
-        """
-        # Remove any spaces or dashes
         number = number.replace(' ', '').replace('-', '')
-        
-        # Check if number contains only digits
-        if not number.isdigit():
+        if not number.isdigit() or len(number) != 9:
             return False
-        
-        # Check length (9 digits)
-        if len(number) != 9:
-            return False
-        
-        # Check if starts with valid prefixes
-        valid_prefixes = ['70', '71', '72', '75', '77', '78']
-        return number[:2] in valid_prefixes
+        return number[:2] in ['70', '71', '72', '75', '77', '78']
 
     def track_location(self):
-        # Clear previous results
-        self.details_label.config(text="")
+        for label in self.result_labels.values():
+            label.config(text="")
 
-        # Get phone number
-        phone_number = self.phone_entry.get()
+        if self.map_button:
+            self.map_button.destroy()
+
+        raw_number = self.phone_entry.get().strip()
         country_code = self.country_code.get().split()[0]
-        full_number = country_code + phone_number
+        full_number = country_code + raw_number
 
         try:
-            # Special validation for Sri Lankan numbers
-            if country_code == "+94":
-                if not self.validate_sri_lankan_number(phone_number):
-                    messagebox.showerror("Error", "Invalid Sri Lankan Mobile Number\nUse formats like 701234567, 711234567, 721234567, 751234567, 771234567, or 781234567")
-                    return
-
-            # Validate phone number
-            parsed_number = phonenumbers.parse(full_number)
-            
-            if not phonenumbers.is_valid_number(parsed_number):
-                messagebox.showerror("Error", "Invalid Phone Number")
+            # Sri Lanka validation
+            if country_code == "+94" and not self.validate_sri_lankan_number(raw_number):
+                messagebox.showerror("Invalid", "Sri Lankan number must be like: 781234567 or 771234567")
                 return
 
-            # Get region information
-            region = geocoder.description_for_number(parsed_number, "en")
-            
-            # Use Nominatim for geocoding
+            parsed = phonenumbers.parse(full_number)
+            if not phonenumbers.is_valid_number(parsed):
+                messagebox.showerror("Error", "Invalid phone number")
+                return
+
+            region = geocoder.description_for_number(parsed, "en")
+            network = carrier.name_for_number(parsed, "en")
+
+            if not network:
+                network = "Unknown"
+
             geolocator = Nominatim(user_agent="phone_location_tracker")
-            
-            # For Sri Lanka, use more specific location
+
             if country_code == "+94":
                 location = geolocator.geocode("Sri Lanka")
-            else:
-                location = geolocator.geocode(region)
-
-            if location:
-                # Additional Sri Lankan number details
-                sri_lankan_regions = {
+                custom_networks = {
                     '70': 'CellTel Network',
                     '71': 'Dialog Network',
                     '72': 'Mobitel Network',
@@ -155,40 +105,29 @@ class PhoneLocationTracker:
                     '77': 'Dialog Network',
                     '78': 'Mobitel Network'
                 }
-
-                # Display location details
-                details = (
-                    f"Country/Region: {region}\n"
-                )
-                
-                # Add network information for Sri Lankan numbers
-                if country_code == "+94":
-                    network = sri_lankan_regions.get(phone_number[:2], 'Unknown Network')
-                    details += f"Mobile Network: {network}\n"
-
-                details += (
-                    f"Latitude: {location.latitude}\n"
-                    f"Longitude: {location.longitude}\n"
-                )
-                
-                self.details_label.config(text=details)
-
-                # Create Google Maps URL
-                maps_url = f"https://www.google.com/maps/search/?api=1&query={location.latitude},{location.longitude}"
-                
-                # Offer to open map
-                open_map = tk.Button(
-                    self.result_frame, 
-                    text="Open in Google Maps", 
-                    command=lambda: webbrowser.open(maps_url)
-                )
-                open_map.pack(pady=10)
+                network = custom_networks.get(raw_number[:2], 'Unknown')
 
             else:
-                messagebox.showinfo("Info", "Could not locate precise coordinates")
+                location = geolocator.geocode(region)
+
+            if location:
+                self.result_labels['location'].config(text=f"🔑 Location: {region}")
+                self.result_labels['region'].config(text=f"🌍 Country/Region: {region}")
+                self.result_labels['network'].config(text=f"🔧 Service Provider: {network}")
+                self.result_labels['latitude'].config(text=f"🧽 Latitude: {location.latitude}")
+                self.result_labels['longitude'].config(text=f"🧽 Longitude: {location.longitude}")
+
+                maps_url = f"https://www.google.com/maps/search/?api=1&query={location.latitude},{location.longitude}"
+                self.map_button = tk.Button(self.master, text="🗺️ Open in Google Maps", bg='#28a745', fg='white',
+                                            font=("Segoe UI", 11, 'bold'), padx=10, pady=5,
+                                            command=lambda: webbrowser.open(maps_url))
+                self.map_button.pack(pady=20)
+            else:
+                messagebox.showinfo("Not Found", "Could not determine location.")
 
         except Exception as e:
-            messagebox.showerror("Error", f"An error occurred: {str(e)}")
+            messagebox.showerror("Error", str(e))
+
 
 def main():
     root = tk.Tk()
